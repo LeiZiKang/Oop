@@ -20,6 +20,8 @@ struct TriggerKeycorder: View {
 
     @Binding private var validCurrentKey: Set<CGKeyCode>
     @State private var selectionKey: Set<CGKeyCode>
+    @State private var heldFunctionKeys: Set<CGKeyCode> = []
+    @State private var fnKeyState = FnKeyState()
 
     @State private var eventMonitor: LocalEventMonitor?
     @State private var shouldShake: Bool = false
@@ -132,26 +134,35 @@ struct TriggerKeycorder: View {
 
         LoopManager.shared.keybindTrigger.stop()
 
-        eventMonitor = LocalEventMonitor(events: [.keyDown, .flagsChanged]) { event in
-            // keyDown event is only used to track escape key, as its flags can include an Fn flag that isn't actually held
-            if event.type == .keyDown {
-                if event.keyCode == CGKeyCode.kVK_Escape {
+        heldFunctionKeys = []
+        fnKeyState.reset(isPressed: NSEvent.modifierFlags.contains(.function))
+
+        eventMonitor = LocalEventMonitor(events: [.keyDown, .keyUp, .flagsChanged]) { event in
+            fnKeyState.update(with: event)
+
+            switch event.type {
+            case .keyDown:
+                if event.keyCode == .kVK_Escape {
                     finishedObservingKeys(wasForced: true)
+                    return nil
                 }
+
+                guard !event.isARepeat, event.keyCode.functionKeyName != nil else { return nil }
+                heldFunctionKeys.insert(event.keyCode)
+            case .keyUp:
+                guard heldFunctionKeys.remove(event.keyCode) != nil else { return nil }
+            case .flagsChanged:
+                break
+            default:
                 return nil
             }
 
-            let flags = CGEventFlags(cocoaFlags: event.modifierFlags)
-            let keycodes = flags.keyCodes
-            selectionKey.formUnion(keycodes)
+            let modifiers = fnKeyState.filteredFlags(CGEventFlags(cocoaFlags: event.modifierFlags)).keyCodes
+            let heldKeys = heldFunctionKeys.union(modifiers)
+            selectionKey.formUnion(heldKeys)
 
-            if keycodes.isEmpty, !selectionKey.isEmpty {
+            if heldKeys.isEmpty, !selectionKey.isEmpty {
                 finishedObservingKeys()
-                return nil
-            }
-
-            if !keycodes.isEmpty, selectionKey.isEmpty {
-                shake()
             }
 
             return nil
@@ -204,7 +215,9 @@ struct TriggerKeycorderKeyView: View {
         HStack(spacing: 4) {
             let keyImage = Image(systemName: key.modifierSystemImage ?? Self.defaultIconName)
 
-            if sideDependentTriggerKey {
+            if let name = key.functionKeyName {
+                Text(name)
+            } else if sideDependentTriggerKey {
                 let side: String = key.isModifierOnRightSide
                     ? String(localized: "Right", comment: "Side of a trigger key")
                     : String(localized: "Left", comment: "Side of a trigger key")

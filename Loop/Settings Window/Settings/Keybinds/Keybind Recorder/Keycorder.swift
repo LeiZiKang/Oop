@@ -122,6 +122,11 @@ struct Keycorder: View {
                 return event
             }
 
+            // A linked function trigger is part of the trigger chord, just like a modifier.
+            if bypassTriggerKey != true, event.keyCode.functionKeyName != nil, triggerKey.contains(event.keyCode) {
+                return nil
+            }
+
             // Handle regular key presses first
             if event.type == .keyDown, !event.isARepeat {
                 if event.keyCode == .kVK_Escape {

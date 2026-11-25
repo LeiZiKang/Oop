@@ -186,13 +186,81 @@ struct KeybindResolverTests {
         #expect(decision.handling == .forward)
     }
 
+    @Test func functionKeyAloneOpensLoop() throws {
+        let decision = resolve(
+            eventType: .keyDown,
+            pressedKeys: [.kVK_F17],
+            modifierKeys: [],
+            isLoopOpen: false,
+            triggerKeys: [.kVK_F17]
+        )
+
+        let opened = try #require(openEffect(decision.effect))
+        #expect(opened.action.direction == .noSelection)
+        #expect(decision.handling == .opening)
+    }
+
+    @Test func functionKeyAndModifierCanTriggerAnAction() throws {
+        let action = WindowAction(.leftHalf)
+        let decision = resolve(
+            eventType: .keyDown,
+            pressedKeys: [.kVK_F18, keyA],
+            modifierKeys: [.kVK_RightControl],
+            triggerKeys: [.kVK_F18, .kVK_Control],
+            actions: [[keyA]: action]
+        )
+
+        try expectOpen(decision.effect, action: action, overridesDelayAction: true)
+    }
+
+    @Test(arguments: [true, false])
+    func functionKeyReleaseClosesLoopOrCancelsPendingOpening(isLoopOpen: Bool) {
+        let decision = resolve(
+            eventType: .keyUp,
+            releasedKey: .kVK_F17,
+            pressedKeys: [],
+            modifierKeys: [],
+            isLoopOpen: isLoopOpen,
+            triggerKeys: [.kVK_F17]
+        )
+
+        #expect(decision.effect == .close(force: false, notifyDoubleClickKeyUp: !isLoopOpen))
+    }
+
+    @Test func releasingFunctionKeyFirstClosesLoopEvenWithModifierHeld() {
+        let decision = resolve(
+            eventType: .keyUp,
+            releasedKey: .kVK_F18,
+            pressedKeys: [],
+            modifierKeys: [.kVK_RightControl],
+            triggerKeys: [.kVK_F18, .kVK_Control]
+        )
+
+        #expect(decision.effect == .close(force: false, notifyDoubleClickKeyUp: false))
+    }
+
+    @Test func releasingAnActionKeyLeavesFunctionTriggerActive() {
+        let decision = resolve(
+            eventType: .keyUp,
+            releasedKey: keyA,
+            pressedKeys: [.kVK_F18],
+            modifierKeys: [],
+            triggerKeys: [.kVK_F18]
+        )
+
+        #expect(decision.effect == .none)
+        #expect(decision.handling == .forward)
+    }
+
     private func resolve(
         eventType: KeybindResolver.EventType,
         isRepeat: Bool = false,
+        releasedKey: CGKeyCode? = nil,
         pressedKeys: Set<CGKeyCode>,
         modifierKeys: Set<CGKeyCode>? = nil,
         isSideDependent: Bool = false,
         isLoopOpen: Bool = true,
+        triggerKeys: Set<CGKeyCode>? = nil,
         actions: [Set<CGKeyCode>: WindowAction] = [:],
         bypassedActions: [Set<CGKeyCode>: WindowAction] = [:]
     ) -> KeybindResolver.Decision {
@@ -200,10 +268,11 @@ struct KeybindResolverTests {
             .init(
                 eventType: eventType,
                 isRepeat: isRepeat,
+                releasedKey: releasedKey,
                 pressedKeys: pressedKeys,
                 modifierKeys: modifierKeys ?? triggerKey,
                 trigger: .init(
-                    keys: triggerKey,
+                    keys: triggerKeys ?? triggerKey,
                     isSideDependent: isSideDependent
                 ),
                 isLoopOpen: isLoopOpen,

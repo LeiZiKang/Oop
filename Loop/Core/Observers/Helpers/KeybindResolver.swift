@@ -27,6 +27,7 @@ enum KeybindResolver {
     struct Input {
         let eventType: EventType
         let isRepeat: Bool
+        var releasedKey: CGKeyCode?
         let pressedKeys: Set<CGKeyCode>
         let modifierKeys: Set<CGKeyCode>
         let trigger: TriggerConfiguration
@@ -92,28 +93,34 @@ enum KeybindResolver {
         let actionKeys = allPressedKeys.subtracting(triggerKeys).baseModifiers
         let allPressedKeysBaseModifiers = allPressedKeys.baseModifiers
 
-        if input.isLoopOpen {
-            if input.pressedKeys.contains(.kVK_Escape) {
-                return .init(
-                    effect: .close(force: true, notifyDoubleClickKeyUp: false),
-                    handling: .consume
-                )
-            }
+        if input.isLoopOpen, input.pressedKeys.contains(.kVK_Escape) {
+            return .init(
+                effect: .close(force: true, notifyDoubleClickKeyUp: false),
+                handling: .consume
+            )
+        }
 
-            if input.eventType == .keyUp {
-                return .init(effect: .none, handling: .forward)
-            }
-
-            if input.eventType != .keyDown, !containsTrigger {
+        if input.eventType == .keyUp {
+            // A function key is released through keyUp. Releasing an action key must leave the session open.
+            if let releasedKey = input.releasedKey, triggerKeys.contains(releasedKey),
+               allPressedKeys.isEmpty || allPressedKeys.union([releasedKey]).isSuperset(of: triggerKeys) {
                 return .init(
-                    effect: .close(force: false, notifyDoubleClickKeyUp: false),
+                    effect: .close(
+                        force: false,
+                        notifyDoubleClickKeyUp: !input.isLoopOpen && allPressedKeys.isEmpty
+                    ),
                     handling: .forward
                 )
             }
+
+            return .init(effect: .none, handling: .forward)
         }
 
-        guard input.eventType != .keyUp else {
-            return .init(effect: .none, handling: .forward)
+        if input.isLoopOpen, input.eventType == .flagsChanged, !containsTrigger {
+            return .init(
+                effect: .close(force: false, notifyDoubleClickKeyUp: false),
+                handling: .forward
+            )
         }
 
         if containsTrigger {

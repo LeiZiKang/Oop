@@ -196,23 +196,7 @@ extension CGKeyCode {
 // MARK: Stringification of keycodes
 
 extension CGKeyCode {
-    /// From https://github.com/sindresorhus/KeyboardShortcuts/ but edited a bit
-    private static let keyToString: [CGKeyCode: String] = [
-        .kVK_Return: "↩",
-        .kVK_Delete: "⌫",
-        .kVK_ForwardDelete: "⌦",
-        .kVK_End: "↘",
-        .kVK_Escape: "⎋",
-        .kVK_Help: "?⃝",
-        .kVK_Home: "↖",
-        .kVK_Space: "␣",
-        .kVK_Tab: "⇥",
-        .kVK_PageUp: "⇞",
-        .kVK_PageDown: "⇟",
-        .kVK_UpArrow: "↑",
-        .kVK_RightArrow: "→",
-        .kVK_DownArrow: "↓",
-        .kVK_LeftArrow: "←",
+    private static let functionKeyNames: [CGKeyCode: String] = [
         .kVK_F1: "F1",
         .kVK_F2: "F2",
         .kVK_F3: "F3",
@@ -232,8 +216,28 @@ extension CGKeyCode {
         .kVK_F17: "F17",
         .kVK_F18: "F18",
         .kVK_F19: "F19",
-        .kVK_F20: "F20",
+        .kVK_F20: "F20"
+    ]
 
+    var functionKeyName: String? { CGKeyCode.functionKeyNames[self] }
+
+    /// From https://github.com/sindresorhus/KeyboardShortcuts/ but edited a bit
+    private static let keyToString: [CGKeyCode: String] = [
+        .kVK_Return: "↩",
+        .kVK_Delete: "⌫",
+        .kVK_ForwardDelete: "⌦",
+        .kVK_End: "↘",
+        .kVK_Escape: "⎋",
+        .kVK_Help: "?⃝",
+        .kVK_Home: "↖",
+        .kVK_Space: "␣",
+        .kVK_Tab: "⇥",
+        .kVK_PageUp: "⇞",
+        .kVK_PageDown: "⇟",
+        .kVK_UpArrow: "↑",
+        .kVK_RightArrow: "→",
+        .kVK_DownArrow: "↓",
+        .kVK_LeftArrow: "←",
         // Representations for numeric keypad keys with   ⃣  Unicode U+20e3 'COMBINING ENCLOSING KEYCAP'
         .kVK_ANSI_Keypad0: "0\u{20e3}",
         .kVK_ANSI_Keypad1: "1\u{20e3}",
@@ -277,6 +281,10 @@ extension CGKeyCode {
 
     /// Big thanks to https://github.com/sindresorhus/KeyboardShortcuts/
     var humanReadable: String? {
+        if let name = functionKeyName {
+            return name
+        }
+
         guard
             let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
             let layoutDataPointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData)

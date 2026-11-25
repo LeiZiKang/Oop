@@ -217,8 +217,12 @@ struct KeybindItemView: View {
         HStack(spacing: 6) {
             if action.bypassTriggerKey != true {
                 HStack(spacing: 6) {
-                    ForEach(triggerKey.sorted().compactMap(\.modifierSystemImage), id: \.self) { image in
-                        Text("\(Image(systemName: image))")
+                    ForEach(triggerKey.sorted(), id: \.self) { key in
+                        if let image = key.modifierSystemImage {
+                            Text("\(Image(systemName: image))")
+                        } else if let name = key.functionKeyName {
+                            Text(name)
+                        }
                     }
                 }
                 .font(.callout)
