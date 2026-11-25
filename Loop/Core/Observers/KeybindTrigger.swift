@@ -21,6 +21,7 @@ final class KeybindTrigger {
 
     // State-tracking
     private var pressedKeys: Set<CGKeyCode> = []
+    private var consumedFunctionKeys: Set<CGKeyCode> = []
     private var fnKeyState = FnKeyState()
     private(set) var effectiveEventFlags: CGEventFlags = []
     private var eventMonitor: ActiveEventMonitor?
@@ -99,9 +100,17 @@ final class KeybindTrigger {
         let isLoopOpen = checkIfLoopOpen()
         effectiveEventFlags = filteredFlags
 
-        if event.type == .keyUp {
-            pressedKeys.remove(keyCode)
-        } else if event.type == .keyDown {
+        let triggerKeys = Defaults[.triggerKey]
+        let isFunctionTrigger = keyCode.functionKeyName != nil && triggerKeys.contains(keyCode)
+        let isARepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
+        let releasedKey = event.type == .keyUp ? pressedKeys.remove(keyCode) : nil
+
+        // Holding a trigger key must not restart the delay or count as a second press.
+        if event.type == .keyDown, isFunctionTrigger, isARepeat {
+            return consumedFunctionKeys.contains(keyCode) ? .ignore : .forward
+        }
+
+        if event.type == .keyDown {
             pressedKeys.insert(keyCode)
         }
 
@@ -122,10 +131,22 @@ final class KeybindTrigger {
 
         let result = performKeybind(
             type: eventType,
-            isARepeat: event.getIntegerValueField(.keyboardEventAutorepeat) == 1,
+            isARepeat: isARepeat,
+            releasedKey: releasedKey,
+            triggerKeys: triggerKeys,
             flags: filteredFlags,
             isLoopOpen: isLoopOpen
         )
+
+        // Consume the release only if Loop also consumed the corresponding press.
+        if event.type == .keyUp, consumedFunctionKeys.remove(keyCode) != nil {
+            return .ignore
+        }
+
+        if event.type == .keyDown, isFunctionTrigger, result != .forward {
+            consumedFunctionKeys.insert(keyCode)
+            return .ignore
+        }
 
         if result == .consume {
             log.debug("Blocked event")
@@ -136,7 +157,7 @@ final class KeybindTrigger {
         // check if it was a system keybind (ex. screenshot), and in that case, passthrough and force-close Loop
         refreshSystemKeybindCacheIfNeeded()
         if result != .opening, event.type == .keyDown, systemKeybindCache.contains(pressedKeys) {
-            closeLoop(forceClose: true)
+            closeLoop(forceClose: true, triggerKeys: triggerKeys)
         }
 
         return .forward
@@ -148,6 +169,7 @@ final class KeybindTrigger {
 
         // Reset states
         pressedKeys = []
+        consumedFunctionKeys = []
         effectiveEventFlags = []
         fnKeyState.reset()
         canPassthroughNextSpecialEvent = true
@@ -157,12 +179,16 @@ final class KeybindTrigger {
     /// - Parameters:
     ///   - type: the type of this event.
     ///   - isARepeat: whether this event is a repeat event.
+    ///   - releasedKey: the tracked key removed by this event, if any.
+    ///   - triggerKeys: the configured trigger keys.
     ///   - flags: modifier flags associated with this event.
     ///   - isLoopOpen: whether Loop is currently open.
     /// - Returns: whether this event was processed by Loop.
     private func performKeybind(
         type: KeybindResolver.EventType,
         isARepeat: Bool,
+        releasedKey: CGKeyCode?,
+        triggerKeys: Set<CGKeyCode>,
         flags: CGEventFlags,
         isLoopOpen: Bool
     ) -> KeybindResolver.ResolvedHandling {
@@ -170,10 +196,11 @@ final class KeybindTrigger {
             .init(
                 eventType: type,
                 isRepeat: isARepeat,
+                releasedKey: releasedKey,
                 pressedKeys: pressedKeys,
                 modifierKeys: flags.keyCodes,
                 trigger: .init(
-                    keys: Defaults[.triggerKey],
+                    keys: triggerKeys,
                     isSideDependent: sideDependentTriggerKey
                 ),
                 isLoopOpen: isLoopOpen,
@@ -193,7 +220,7 @@ final class KeybindTrigger {
             if notifyDoubleClickKeyUp {
                 doubleClickTimer.handleKeyUp()
             }
-            closeLoop(forceClose: force)
+            closeLoop(forceClose: force, triggerKeys: triggerKeys)
         }
 
         return decision.handling.resolve(isLoopOpenAfterEffect: checkIfLoopOpen())
@@ -217,10 +244,11 @@ final class KeybindTrigger {
         }
     }
 
-    private func closeLoop(forceClose: Bool) {
+    private func closeLoop(forceClose: Bool, triggerKeys: Set<CGKeyCode>) {
         triggerDelayTimer.cancel()
         closeCallback(forceClose)
-        pressedKeys = []
+        // Keep held function keys so a trigger chord can be completed in either order.
+        pressedKeys.formIntersection(triggerKeys)
     }
 
     private func startTriggerDelayTimer(
